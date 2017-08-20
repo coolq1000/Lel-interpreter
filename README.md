@@ -6,7 +6,7 @@ So far it only generates a AST.
 
 ## Starting code
 So for our tests we'll use
-```Lisp
+```Lua
 (function cube (x)
   (* x x x)
 )

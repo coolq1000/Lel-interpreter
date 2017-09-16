@@ -1,62 +1,73 @@
-# Lel-interpreter
-A Pure-Python implementation of Lel
+# Lel interpreter written in python
+This is a LEL interpreter, inspired and based off: https://francisstokes.wordpress.com/2017/08/16/programming-language-from-scratch/
 
-## Features
-So far it only generates a AST.
+## Basics
+If you don't know what LISP is, then I highly recommend that you check out this: https://en.wikipedia.org/wiki/Lisp_(programming_language)
 
-## Starting code
-So for our tests we'll use
-```Lua
-(function cube (x)
-  (* x x x)
+Lel is a variation of Lisp, here are some basics:
+### Set a variable,
+```lisp
+(let a 10) ; Set's `a` to 10.
+```
+
+#### Output,
+```lisp
+(print "Hello, World!") ; Outputs `>>>: Hello, World!`
+```
+
+#### Iteration,
+
+Because I used straight functions for recursion, it is easy to hit the stack limit in Python.
+Because of this, I added a `loop` function.
+```lisp
+(loop (<EXPR>) 
+    <CODE>
 )
- 
+```
+
+#### Comments,
+```lisp
+; This is a comment. There are no multi-line comments yet.
+```
+
+#### Functions,
+```lisp
+(function cube(x)
+    ; Take X and multiply it be itself,
+    (let a (* x x))
+    ; Return x * a
+    (* x a)
+)
+; Set `threeCubed` to cube(3),
 (let threeCubed (cube 3))
- 
+; Lastly print the result,
 (print threeCubed)
+>>> 27.0
 ```
 
-## Lexing
-Now we need to split this code into a bunch of tokens so it's easier to parse.
-```python
-[<Token, LPAREN, (>, <Token, KEYWORD, function>, <Token, KEYWORD, cube>, <Token, LPAREN, (>, <Token, KEYWORD, x>, <Token, RPAREN, )>, <Token, LPAREN, (>, <Token, KEYWORD, *>, <Token, KEYWORD, x>, <Token, KEYWORD, x>, <Token, KEYWORD, x>, <Token, RPAREN, )>, <Token, RPAREN, )>, <Token, LPAREN, (>, <Token, KEYWORD, let>, <Token, KEYWORD, threeCubed>, <Token, LPAREN, (>, <Token, KEYWORD, cube>, <Token, NUMBER, 3>, <Token, RPAREN, )>, <Token, RPAREN, )>, <Token, LPAREN, (>, <Token, KEYWORD, print>, <Token, KEYWORD, threeCubed>, <Token, RPAREN, )>]
+#### Lists,
+```lisp
+(print (list 1 2 3))
+>>> [1, 2, 3]
 ```
 
-## AST
-Then we need to generate the AST.
-
-```python
-[
-  [
-    <Token, KEYWORD, function>,
-    <Token, KEYWORD, cube>,
-    [
-      <Token, KEYWORD, x>
-    ],
-    [
-      <Token, KEYWORD, *>,
-      <Token, KEYWORD, x>,
-      <Token, KEYWORD, x>,
-      <Token, KEYWORD, x>
-    ]
-  ],
-  [
-    <Token, KEYWORD, let>,
-    <Token, KEYWORD, threeCubed>,
-    [
-      <Token, KEYWORD, cube>,
-      <Token, NUMBER, 3>
-    ]
-  ],
-  [
-    <Token, KEYWORD, print>,
-    <Token, KEYWORD, threeCubed>
-  ]
-]
+#### Indexing list,
+Note that lists also wrap with negative values.
+```lisp
+(let lst (list 1 2 3))
+(print (index 0 lst))
+>>> 1.0
+(print (index (- 0 1) lst))
+>>> 3.0
 ```
 
-## Evaluator
-This is the next step for my language.
-
-### Resources
-Heavily inspired from: https://francisstokes.wordpress.com/2017/08/16/programming-language-from-scratch/comment-page-1/#comment-44
+## REPL,
+To use the REPL, simply run the program without any filename
+```~$ python main.py
+LEL> (function test(x y)
+...>    (+ x y)
+...>
+LEL> (test 10 10)
+20.0 ; Outputs correct value.
+LEL>
+```

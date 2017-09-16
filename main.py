@@ -1,136 +1,254 @@
-import re
 
-''' Commented out because it seemed a little over kill for what I wanted.
-class Node:
+import re, shlex, sys
+
+class Error:
+
+    ERROR_TYPE_INCORRECTNUMBEROFARGUMENTS = Exception('E: Incorrect number of arguments.')
+
+    def check_args(args, count):
+        if len(args) != count:
+            raise Error.ERROR_TYPE_INCORRECTNUMBEROFARGUMENTS
+        
+
+class Pre:
+
+    def __init__(self, code):
+        self.code = code
     
-    def __init__(self, data=None):
-        self.children = []
-        self.parent = None
-        self.data = data
-    
-    def set_parent(self, obj):
-        if self.parent == None:
-            obj.add_child(self)
-            self.parent = obj
-        else:
-            self.parent.del_child(self)
-            obj.add_child(self)
-            self.parent = obj
-    
-    def add_child(self, obj):
-        self.children.append(obj)
-    
-    def del_child(self, obj):
-        self.children.pop([i for i, x in enumerate(self.children) if x == obj][0])
-    
-    def is_leaf(self):
-        if self.children == []:
-            return True
-        return False
-    
-    def is_root(self):
-        if self.children == []:
-            return True
-        return False
-    
-    def output(self, count=0):
-        print('____'*count + str(self.data) if self.data is not None else 'Node')
-        for c in self.children:
-            c.output(count=count + 1)
-'''
+    def pre(self):
+        result = []
+        for l in self.code.split('\n'):
+            if not l.startswith(';'):
+                result += [l]
+        return '\n'.join(result)
 
 class Token:
-    
-    def __init__(self, name, value, regex=''):
-        self.name, self.value, self.regex = name, value, regex
+
+    def __init__(self, name, value):
+        self.name, self.value = name, value
     
     def __repr__(self):
         return '<Token, {}, {}>'.format(self.name, self.value)
 
 class Lexer:
-    
-    tokens = {
-        r'\(': 'LPAREN',
-        r'\)': 'RPAREN',
-        r'[0-9]+': 'NUMBER',
-        r"'.*?'": 'STRING',
-        r'".*?"': 'STRING',
-        r'[A-Za-z0-9\-\!\$\%\^\&\*\_\+\|\~\=\`\{\}\[\]\:\"\;\'\<\>?,.\/]+': 'KEYWORD'
-    }
-    
+
     def __init__(self, code):
         self.code = code
     
     def lexer(self):
-        token_string = '|'.join(self.tokens)
-        match = re.findall(token_string, self.code)
-        tks = []
-        for i in match:
-            for j in self.tokens:
-                if re.findall(j, i):
-                    tks += [Token(self.tokens[j], i, regex=j)]
-                    break
-        return tks
+        match = list(shlex.shlex(self.code))
+        i = 0
+        while i < len(match):
+            if match[i] == '.':
+                if i > 0 and i < len(match) - 1:
+
+                    match[i] = match[i - 1] + '.' + match[i + 1]
+                    match.pop(i + 1)
+                    match.pop(i - 1)
+            i += 1
+        out = []
+        for m in match:
+            if (m.startswith('"') and m.endswith('"')) or (m.startswith("'") or m.endswith("'")):
+                out += [Token('STRING', m[1:-1])]
+            elif m.replace('.', '').isdigit():
+                out += [Token('NUMBER', float(m))]
+            else:
+                out += [Token('KEYWORD', m)]
+        return out
 
 class Parse:
-    
+
     def __init__(self, code):
         self.code = code
         self.tree = []
         self.parent = []
-        self.work = self.tree
-        self.line = 0
+        self.working = self.tree
     
     def parse(self):
-        while self.line < len(self.code):
-            token = self.code[self.line]
-            name, value = token.name, token.value
-            if name == 'LPAREN':
-                self.work += [[]]
-                self.parent.append(self.work)
-                self.work = self.work[-1]
-            elif name == 'RPAREN':
-                self.work = self.parent.pop()
+        for token in self.code:
+            n, v = token.name, token.value
+            if v == '(':
+                self.working += [[]]
+                self.parent += [self.working]
+                self.working = self.working[-1]
+            elif v == ')':
+                self.working = self.parent.pop()
             else:
-                self.work.append(token)
-            self.line += 1
+                self.working += [token]
         return self.tree
 
-class Evaluate:
-    
+class Evaluator:
+
     def __init__(self, code):
+        self.code = code
         self.variables = {}
         self.functions = {}
-        self.code = code
+        self.builtins = {
+            'let': self._let,
+            'print': self._print,
+            'function': self._function,
+            'loop': self._loop,
+            'if': self._if,
+            'list': self._list,
+            'index': self._index,
+            'len': self._len,
+            'exit': self._exit,
+            '+': self._add,
+            '-': self._sub,
+            '*': self._mul,
+            '/': self._div,
+            '=': self._equ,
+            '!': self._not
+        }
     
-    def evaluate_expr(self, expr):
-        for i, c in enumerate(expr):
-            if type(c) is list:
-                self.evaluate_expr(c)
-            else:
-                name, value = c.name, c.value
-                if   name == 'NUMBER':
-                    return int(value)
-                elif value in self.variables:
-                    return self.variables[value]
-                elif value == 'let':
-                    print('Ding!')
-                
+    def get_var(self, name):
+        if name in self.variables:
+            return self.variables[name][0]
+        raise Exception('E: Attempt to access undefined variable.')
     
-    def evaluate(self):
-        self.evaluate_expr(self.code)
+    def set_var(self, name, value, scope=0):
+        self.variables[name] = (value, scope)
+    
+    def _let(self, args):
+        Error.check_args(args, 2)
+        setter = self.evaluate_expr([args[1]])
+        self.set_var(args[0].value, setter)
 
-code = '''
-(function cube (x)
-  (* x x x)
-)
- 
-(let threeCubed (cube 3))
- 
-(print threeCubed)
-'''
-code = Lexer(code).lexer()
-print(code)
-code = Parse(code).parse()
-print(code)
-Evaluate(code).evaluate()
+    def _print(self, args):
+        Error.check_args(args, 1)
+        print(self.evaluate_expr(args))
+    
+    def _function(self, args):
+        name = args[0]
+        parameters = args[1]
+        code = args[2:]
+        self.functions[name.value] = (code, parameters)
+
+    def _loop(self, args):
+        Error.check_args(args, 2)
+        expr = args[0]
+        code = args[1:]
+        while self.evaluate_expr(expr) == 1:
+            self.evaluate_expr(code)
+    
+    def _if(self, args):
+        Error.check_args(args, 2)
+        expr = args[0]
+        code = args[1]
+        if self.evaluate_expr(expr) == 1:
+            self.evaluate_expr(code)
+    
+    def _list(self, args):
+        return [self.evaluate_expr([x]) for x in args]
+
+    def _index(self, args):
+        Error.check_args(args, 2)
+        ind = self.evaluate_expr([args[0]])
+        lst = self.evaluate_expr([args[1]])
+        return lst[int(ind)]
+    
+    def _len(self, args):
+        return len(self.evaluate_expr([args[0]]))
+
+    def _exit(self, args):
+        raise SystemExit
+    
+    def _add(self, args):
+        ans = self.evaluate_expr([args[0]]) + self.evaluate_expr([args[1]])
+        return ans
+
+    def _sub(self, args):
+        ans = self.evaluate_expr([args[0]]) - self.evaluate_expr([args[1]])
+        return ans
+
+    def _mul(self, args):
+        ans = self.evaluate_expr([args[0]]) * self.evaluate_expr([args[1]])
+        return ans
+
+    def _div(self, args):
+        ans = self.evaluate_expr([args[0]]) / self.evaluate_expr([args[1]])
+        return ans
+    
+    def _equ(self, args):
+        ans = self.evaluate_expr([args[0]]) == self.evaluate_expr([args[1]])
+        return 1 if ans else 0
+
+    def _not(self, args):
+        ans = self.evaluate_expr([args[0]]) == self.evaluate_expr([args[1]])
+        return 0 if ans else 1
+
+    def call(self, fn, args):
+        fn = self.functions[fn]
+        parameters = fn[1]
+        code = fn[0]
+        Error.check_args(parameters, len(args))
+        for i, p in enumerate(parameters):
+            self.set_var(p.value, self.evaluate_expr([args[i]]))
+        return self.evaluate_expr(code)
+
+    def evaluate_expr(self, e):
+        last = None
+        for i, cmd in enumerate(e):
+            if type(cmd) is list:
+                ans = self.evaluate_expr(cmd)
+                last = ans
+            else:
+                if type(cmd) is Token:
+                    n, v = cmd.name, cmd.value
+                else:
+                    last = cmd
+                    break
+
+                if n == 'NUMBER':
+                    last = v
+                elif n == 'STRING':
+                    last = v
+                elif n == 'KEYWORD':
+                    if v in self.builtins:
+                        last = self.builtins[v](e[1:])
+                        break
+                    elif v in self.variables:
+                        last = self.get_var(v)
+                    elif v in self.functions:
+                        last = self.call(v, e[1:])
+                        break
+                    else:
+                        raise Exception('E: Unexpected token `{}`.'.format(v))
+        return last
+
+    def run(self):
+        self.evaluate_expr([self.code])
+
+if __name__ == '__main__':
+    if len(sys.argv) == 2:
+        code = open(sys.argv[1], 'r').read()
+        code = Pre(code).pre()
+        code = Lexer(code).lexer()
+        code = Parse(code).parse()
+        Evaluator(code).run()
+    else:
+        # Create REPL,
+        evaluate = Evaluator([])
+        while True:
+            cmd = input('LEL> ')
+            left = 0
+            right = 0
+            for char in cmd:
+                if char == '(': left += 1
+                if char == ')': right += 1
+            while left > right:
+                cmd += input('...> ')
+                left = 0
+                right = 0
+                for char in cmd:
+                    if char == '(': left += 1
+                    if char == ')': right += 1
+            code = cmd
+            code = Pre(code).pre()
+            code = Lexer(code).lexer()
+            code = Parse(code).parse()
+            try:
+                ans = evaluate.evaluate_expr(code)
+                if ans != None: print(ans)
+            except Exception as e:
+                print(e)

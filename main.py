@@ -160,7 +160,7 @@ class Evaluator:
     
     def _if(self, args):
         expr = args[0]
-        code = args[1]
+        code = args[1:]
         if self.evaluate_expr(expr) == 1:
             self.evaluate_expr(code)
     

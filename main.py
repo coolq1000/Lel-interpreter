@@ -10,6 +10,11 @@ class Error:
             raise Error.ERROR_TYPE_INCORRECTNUMBEROFARGUMENTS
         
 
+class Null:
+    
+    def __repr__(self):
+        return 'null'
+
 class Pre:
 
     def __init__(self, code):
@@ -18,7 +23,7 @@ class Pre:
     def pre(self):
         result = []
         for l in self.code.split('\n'):
-            if not l.startswith(';'):
+            if not l.replace('\t', ' ').lstrip(' ').startswith(';'):
                 result += [l]
         return '\n'.join(result)
 
@@ -51,7 +56,7 @@ class Lexer:
             if (m.startswith('"') and m.endswith('"')) or (m.startswith("'") or m.endswith("'")):
                 out += [Token('STRING', m[1:-1])]
             elif m.replace('.', '').isdigit():
-                out += [Token('NUMBER', float(m))]
+                out += [Token('NUMBER', float(m) if '.' in m else int(m))]
             else:
                 out += [Token('KEYWORD', m)]
         return out
@@ -79,13 +84,16 @@ class Parse:
 
 class Evaluator:
 
-    def __init__(self, code):
+    def __init__(self, code, stdout=None):
+        self.stdout = stdout
+        self.buffer = []
         self.code = code
-        self.variables = {}
+        self.variables = {'null': [Null()]}
         self.functions = {}
         self.builtins = {
             'let': self._let,
             'print': self._print,
+            'puts': self._puts,
             'function': self._function,
             'loop': self._loop,
             'if': self._if,
@@ -93,12 +101,18 @@ class Evaluator:
             'index': self._index,
             'len': self._len,
             'exit': self._exit,
+            'set': self._set,
+            'push': self._push,
+            'pop': self._pop,
             '+': self._add,
             '-': self._sub,
             '*': self._mul,
             '/': self._div,
+            '%': self._mod,
             '=': self._equ,
-            '!': self._not
+            '!': self._not,
+            '<': self._les,
+            '>': self._gre
         }
     
     def get_var(self, name):
@@ -110,13 +124,27 @@ class Evaluator:
         self.variables[name] = (value, scope)
     
     def _let(self, args):
-        Error.check_args(args, 2)
         setter = self.evaluate_expr([args[1]])
         self.set_var(args[0].value, setter)
 
     def _print(self, args):
-        Error.check_args(args, 1)
-        print(self.evaluate_expr(args))
+        if self.stdout == None:
+            print(self.evaluate_expr(args))
+        else:
+            ans = self.evaluate_expr(args)
+            if type(ans) is list:
+                self.buffer.append(list(ans))
+            else:
+                self.buffer.append(ans)
+    
+    def _puts(self, args):
+        if self.stdout == None:
+            print(self.evaluate_expr(args), end='')
+        else:
+            if len(self.buffer) > 0:
+                self.buffer[-1].append(self.evaluate_expr(args))
+            else:
+                self.buffer.append(self.evaluate_expr(args))
     
     def _function(self, args):
         name = args[0]
@@ -125,14 +153,12 @@ class Evaluator:
         self.functions[name.value] = (code, parameters)
 
     def _loop(self, args):
-        Error.check_args(args, 2)
         expr = args[0]
         code = args[1:]
         while self.evaluate_expr(expr) == 1:
             self.evaluate_expr(code)
     
     def _if(self, args):
-        Error.check_args(args, 2)
         expr = args[0]
         code = args[1]
         if self.evaluate_expr(expr) == 1:
@@ -142,7 +168,6 @@ class Evaluator:
         return [self.evaluate_expr([x]) for x in args]
 
     def _index(self, args):
-        Error.check_args(args, 2)
         ind = self.evaluate_expr([args[0]])
         lst = self.evaluate_expr([args[1]])
         return lst[int(ind)]
@@ -152,6 +177,18 @@ class Evaluator:
 
     def _exit(self, args):
         raise SystemExit
+    
+    def _set(self, args):
+        args = [self.evaluate_expr([x]) for x in args]
+        args[1][int(args[0])] = args[2]
+
+    def _push(self, args):
+        args = [self.evaluate_expr([x]) for x in args]
+        args[0].append(args[1])
+    
+    def _pop(self, args):
+        args = [self.evaluate_expr([x]) for x in args]
+        args[0].pop()
     
     def _add(self, args):
         ans = self.evaluate_expr([args[0]]) + self.evaluate_expr([args[1]])
@@ -168,6 +205,10 @@ class Evaluator:
     def _div(self, args):
         ans = self.evaluate_expr([args[0]]) / self.evaluate_expr([args[1]])
         return ans
+
+    def _mod(self, args):
+        ans = self.evaluate_expr([args[0]]) % self.evaluate_expr([args[1]])
+        return ans
     
     def _equ(self, args):
         ans = self.evaluate_expr([args[0]]) == self.evaluate_expr([args[1]])
@@ -177,11 +218,18 @@ class Evaluator:
         ans = self.evaluate_expr([args[0]]) == self.evaluate_expr([args[1]])
         return 0 if ans else 1
 
+    def _les(self, args):
+        ans = self.evaluate_expr([args[0]]) < self.evaluate_expr([args[1]])
+        return 1 if ans else 0
+    
+    def _gre(self, args):
+        ans = self.evaluate_expr([args[0]]) > self.evaluate_expr([args[1]])
+        return 1 if ans else 0
+
     def call(self, fn, args):
         fn = self.functions[fn]
         parameters = fn[1]
         code = fn[0]
-        Error.check_args(parameters, len(args))
         for i, p in enumerate(parameters):
             self.set_var(p.value, self.evaluate_expr([args[i]]))
         return self.evaluate_expr(code)
@@ -204,13 +252,13 @@ class Evaluator:
                 elif n == 'STRING':
                     last = v
                 elif n == 'KEYWORD':
-                    if v in self.builtins:
-                        last = self.builtins[v](e[1:])
-                        break
-                    elif v in self.variables:
+                    if v in self.variables:
                         last = self.get_var(v)
                     elif v in self.functions:
                         last = self.call(v, e[1:])
+                        break
+                    elif v in self.builtins:
+                        last = self.builtins[v](e[1:])
                         break
                     else:
                         raise Exception('E: Unexpected token `{}`.'.format(v))
